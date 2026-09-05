@@ -1,6 +1,5 @@
 import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three'
 import type { Material } from 'three'
-import { buildStarshipPayload } from './starshipBuild'
 import { buildStarshipMaterials } from './starshipMaterials'
 import { createStarshipRig } from './starshipRig'
 import { STARSHIP_SITE, STARSHIP_VEHICLE_OFFSET_X } from './starshipSite'
@@ -31,8 +30,14 @@ export interface StarshipAsset {
   rig: StarshipRigHandles
 }
 
-export async function loadStarshipAsset(): Promise<StarshipAsset> {
-  const payload = await runBuild()
+export function prepareStarshipPayload(): Promise<StarshipPayload> {
+  return runBuild()
+}
+
+export async function loadStarshipAsset(
+  payloadPromise: Promise<StarshipPayload> = prepareStarshipPayload(),
+): Promise<StarshipAsset> {
+  const payload = await payloadPromise
 
   // The vehicle's X falls out of the catch-pad seat on the arm, and the site
   // constants are written against it. If a source edit moves it, the stack
@@ -107,21 +112,39 @@ export async function loadStarshipAsset(): Promise<StarshipAsset> {
  * failure to load — a landmark that silently goes missing is worse.
  */
 function runBuild(): Promise<StarshipPayload> {
-  return new Promise<StarshipPayload>((resolve) => {
+  return new Promise<StarshipPayload>((resolve, reject) => {
     let worker: Worker
+    let settled = false
+    const complete = (payload: StarshipPayload): void => {
+      if (settled) return
+      settled = true
+      resolve(payload)
+    }
+    const fail = (error: unknown): void => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const buildInline = (): void => {
+      if (settled) return
+      void import('./starshipBuild')
+        .then(({ buildStarshipPayload }) => buildStarshipPayload())
+        .then(complete, fail)
+    }
+
     try {
       worker = new Worker(new URL('./starshipWorker.ts', import.meta.url), { type: 'module' })
     } catch {
-      resolve(buildStarshipPayload())
+      buildInline()
       return
     }
     worker.onmessage = (event: MessageEvent<StarshipPayload>): void => {
       worker.terminate()
-      resolve(event.data)
+      complete(event.data)
     }
     worker.onerror = (): void => {
       worker.terminate()
-      resolve(buildStarshipPayload())
+      buildInline()
     }
     worker.postMessage('build')
   })

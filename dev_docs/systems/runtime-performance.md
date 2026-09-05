@@ -95,3 +95,30 @@ before the cached copy is retired; after
 touchdown the live target remains until every static clipmap has recaptured the
 parked silhouette. The vehicle therefore keeps its shadow throughout ascent and
 landing while idle memory/work is removed.
+
+## Loading CPU overlap and shared build products (2026-09-05)
+
+The Starship and Optimus procedural payload workers start immediately after the
+WebGPU eligibility gate, before renderer initialization. Their promises are
+passed into the systems, but scene installation remains at the original ordered
+registry positions, so physics, shadow sealing, and every warmup pose keep their
+existing dependencies. Worker failures still use the existing inline fallback
+and reject the observed boot chain if that fallback fails.
+
+The successful main-thread model path no longer statically imports either heavy
+procedural builder. The inline fallback imports it only after a worker failure.
+Starship rig constants live in `starshipParts.ts`, keeping the animation rig
+independent of the worker-only builder chunk.
+
+The two tram cars share one immutable geometry template, including animated
+door-leaf buffers. Each car still owns its Group, door transforms, cabin lights,
+seat vectors, and unit-number material. The template preserves the original
+non-indexed slot geometry and triangle budget; only duplicate CPU generation and
+buffer allocation are removed.
+
+Terrain boot samplers pass already-computed paving distance and ground grade
+between the floor, physics, regolith, and throat helpers. The public height
+fields remain unchanged; no sampling density, interpolation, or visual quality
+control was altered. Transparent-composite helper quads are compiled once per
+unchanged target configuration, while each camera-pose scene compile remains
+awaited. A target resize invalidates that helper barrier conservatively.

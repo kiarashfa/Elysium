@@ -47,6 +47,7 @@ export class TransparentCompositeNode extends TempNode<'vec4'> {
   private readonly copyMaterial = new NodeMaterial()
   private readonly quad = new QuadMesh()
   private rendererState = {} as RendererState
+  private helpersCompiled = false
 
   constructor(
     opaqueHdrNode: Node<'vec4'>,
@@ -156,16 +157,23 @@ export class TransparentCompositeNode extends TempNode<'vec4'> {
     this.rendererState = RendererUtils.resetRendererState(renderer, this.rendererState)
     const previousOpaque = renderer.opaque
     const previousTransparent = renderer.transparent
+    const compileHelpers = !this.helpersCompiled
     try {
       renderer.setRenderTarget(this.target)
       renderer.setMRT(this.outputMrt)
-      renderer.opaque = true
-      renderer.transparent = true
-      this.quad.material = this.depthSeedMaterial
-      await renderer.compileAsync(this.quad, this.quad.camera)
 
-      this.quad.material = this.copyMaterial
-      await renderer.compileAsync(this.quad, this.quad.camera)
+      if (compileHelpers) {
+        renderer.opaque = true
+        renderer.transparent = true
+        this.quad.material = this.depthSeedMaterial
+        await renderer.compileAsync(this.quad, this.quad.camera)
+
+        this.quad.material = this.copyMaterial
+        await renderer.compileAsync(this.quad, this.quad.camera)
+        // The scene compile below may fail independently. The helper pipelines
+        // are still valid and need not be rebuilt on the next attempt.
+        this.helpersCompiled = true
+      }
 
       renderer.opaque = false
       renderer.transparent = true
@@ -192,6 +200,10 @@ export class TransparentCompositeNode extends TempNode<'vec4'> {
   private ensureSize(width: number, height: number): void {
     if (this.target.width === width && this.target.height === height) return
     this.target.setSize(width, height)
+    // A resized target has a new attachment configuration. Keep the compile
+    // barrier conservative so the next warmup rebuilds both invariant quads
+    // against the live target.
+    this.helpersCompiled = false
   }
 }
 

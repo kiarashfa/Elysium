@@ -1,6 +1,5 @@
 import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from 'three'
 import type { Material } from 'three'
-import { buildOptimusPayload } from './optimusBuild'
 import { buildMaterials } from './optimusMaterials'
 import type { OptimusPayload } from './optimusBuild'
 
@@ -21,8 +20,14 @@ export interface OptimusAsset {
   buildMs: number
 }
 
-export async function loadOptimusAsset(): Promise<OptimusAsset> {
-  const payload = await runBuild()
+export function prepareOptimusPayload(): Promise<OptimusPayload> {
+  return runBuild()
+}
+
+export async function loadOptimusAsset(
+  payloadPromise: Promise<OptimusPayload> = prepareOptimusPayload(),
+): Promise<OptimusAsset> {
+  const payload = await payloadPromise
   const mats = buildMaterials()
 
   // Material NAMES come from the payload; the array's order is the draw
@@ -55,21 +60,39 @@ export async function loadOptimusAsset(): Promise<OptimusAsset> {
  * failure to load — an exhibit that silently goes missing is worse.
  */
 function runBuild(): Promise<OptimusPayload> {
-  return new Promise<OptimusPayload>((resolve) => {
+  return new Promise<OptimusPayload>((resolve, reject) => {
     let worker: Worker
+    let settled = false
+    const complete = (payload: OptimusPayload): void => {
+      if (settled) return
+      settled = true
+      resolve(payload)
+    }
+    const fail = (error: unknown): void => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const buildInline = (): void => {
+      if (settled) return
+      void import('./optimusBuild')
+        .then(({ buildOptimusPayload }) => buildOptimusPayload())
+        .then(complete, fail)
+    }
+
     try {
       worker = new Worker(new URL('./optimusWorker.ts', import.meta.url), { type: 'module' })
     } catch {
-      resolve(buildOptimusPayload())
+      buildInline()
       return
     }
     worker.onmessage = (event: MessageEvent<OptimusPayload>): void => {
       worker.terminate()
-      resolve(event.data)
+      complete(event.data)
     }
     worker.onerror = (): void => {
       worker.terminate()
-      resolve(buildOptimusPayload())
+      buildInline()
     }
     worker.postMessage('build')
   })

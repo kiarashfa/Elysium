@@ -5,6 +5,8 @@ import { MB } from '../procgen/sslib/meshbuilder'
 import { buildGeometry } from '../procgen/sslib/evalmesh'
 import type { BuildObject, GeometryGroup } from '../procgen/sslib/evalmesh'
 import type { Vec3 } from '../procgen/sslib/mathkit'
+import { TOWER_ARM_N, TOWER_ARM_P } from './starshipParts'
+export { TOWER_ARM_N, TOWER_ARM_P, TOWER_QD_ARM, VEHICLE_PARTS } from './starshipParts'
 
 /**
  * Runs the whole ported build and flattens it to transferable buffers.
@@ -70,17 +72,6 @@ export interface StarshipPayload {
   rig: StarshipRig
   buildMs: number
 }
-
-/** Parts that leave the ground together. Everything else stays on the pad. */
-export const VEHICLE_PARTS: ReadonlySet<string> = new Set([
-  'Ship_Hull', 'Ship_TPS', 'Ship_Flaps', 'Ship_Engines', 'Ship_Details',
-  'Booster_Hull', 'Booster_HotStage', 'Booster_GridFins', 'Booster_Chines',
-  'Booster_Engines', 'Booster_Details',
-])
-
-export const TOWER_ARM_P = 'Tower_ArmP'
-export const TOWER_ARM_N = 'Tower_ArmN'
-export const TOWER_QD_ARM = 'Tower_QDArm'
 
 /**
  * THE CHOPSTICKS ARE SPLIT, and the split is lossless by construction.

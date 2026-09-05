@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "postinstall": "node tools/patch-rapier-init.mjs",
+    "test": "node --experimental-strip-types --import ./tests/register.mjs --test tests/*.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b"
   },

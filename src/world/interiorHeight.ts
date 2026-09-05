@@ -68,6 +68,20 @@ function reliefDetail(x: number, z: number): number {
 
 /** The regolith surface: what the floor mesh draws and paving sits on. */
 export function groundGrade(x: number, z: number): number {
+  return groundGradeWithPavedDistance(x, z, undefined)
+}
+
+/**
+ * Ground grade with an optional caller-owned paving distance. Several boot
+ * meshes need both values at the same coordinate; accepting the already
+ * sampled distance keeps the field identical without evaluating the paving
+ * plan twice.
+ */
+function groundGradeWithPavedDistance(
+  x: number,
+  z: number,
+  pavedDistance: number | undefined,
+): number {
   const r = Math.hypot(x, z)
 
   // Long swales, ±0.75 m at most. The amplitude profile keeps the civic core
@@ -127,7 +141,7 @@ export function groundGrade(x: number, z: number): number {
 
   // Relief lives on OPEN ground only: never under paving (the slab would
   // poke through), never on a pad (pads are poured flat by definition).
-  const sd = pavedSignedDistance(x, z)
+  const sd = pavedDistance ?? pavedSignedDistance(x, z)
   const clearOfPaving = smooth(clamp01((sd - 0.5) / 2.2))
   const open = (1 - flatness) * clearOfPaving
   if (open > 0) height += reliefDetail(x, z) * open
@@ -211,8 +225,12 @@ export function corridorDip(x: number, z: number, grade = groundGrade(x, z)): nu
  *  (dirt poking through a paved forecourt — the owner's moat). Dig-only,
  *  like every sheet conform. */
 export function regolithSurface(x: number, z: number): number {
-  const grade = groundGrade(x, z)
-  return grade + Math.min(corridorDip(x, z, grade), Math.min(0, throatLift(x, z)))
+  const pavedDistance = pavedSignedDistance(x, z)
+  const grade = groundGradeWithPavedDistance(x, z, pavedDistance)
+  return grade + Math.min(
+    corridorDip(x, z, grade),
+    Math.min(0, throatLiftWithGrade(x, z, grade)),
+  )
 }
 
 /**
@@ -261,6 +279,10 @@ export function throatCrown(x: number, z: number): number {
 }
 
 export function throatLift(x: number, z: number): number {
+  return throatLiftWithGrade(x, z, undefined)
+}
+
+function throatLiftWithGrade(x: number, z: number, grade: number | undefined): number {
   const throat = THROAT
   if (!throat) return 0
   const r = Math.hypot(x, z)
@@ -291,7 +313,7 @@ export function throatLift(x: number, z: number): number {
   }
   if (w <= 0) return 0
   // Target: tiles at street + 46 mm, street at the blended crown + 14 mm.
-  const natural = groundGrade(x, z) + PAVE.rise
+  const natural = (grade ?? groundGrade(x, z)) + PAVE.rise
   return (throatCrown(x, z) + 0.06 - natural) * w
 }
 
@@ -305,6 +327,7 @@ export function throatLift(x: number, z: number): number {
 const SPUR_TAIL_FROM = 8
 const SPUR_TAIL_ABS = [1.4, 1.06]
 const SPUR_TAIL_LIFT = [0.18, 0, 0, 0, 0, 0]
+const SPUR_TAIL = ARRIVAL_SPINE.slice(SPUR_TAIL_FROM)
 
 let streetCache: number | null = null
 
@@ -319,6 +342,12 @@ function streetDatum(): number {
 
 let spurBox: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null
 
+function spurNodeY(index: number): number {
+  return index < SPUR_TAIL_ABS.length
+    ? SPUR_TAIL_ABS[index]
+    : streetDatum() + SPUR_TAIL_LIFT[index - SPUR_TAIL_ABS.length]
+}
+
 /**
  * Lateral distance to the arrival spur's plan alignment and the trackbed
  * crown height there. Returns null outside the tail's bounding box (the hot
@@ -326,26 +355,21 @@ let spurBox: { minX: number; maxX: number; minZ: number; maxZ: number } | null =
  * compares).
  */
 export function spurTrackDatum(x: number, z: number): { d: number; y: number } | null {
-  const tail = ARRIVAL_SPINE.slice(SPUR_TAIL_FROM)
   if (!spurBox) {
     const pad = 3.5
     spurBox = {
-      minX: Math.min(...tail.map(([px]) => px)) - pad,
-      maxX: Math.max(...tail.map(([px]) => px)) + pad,
-      minZ: Math.min(...tail.map(([, pz]) => pz)) - pad,
-      maxZ: Math.max(...tail.map(([, pz]) => pz)) + pad,
+      minX: Math.min(...SPUR_TAIL.map(([px]) => px)) - pad,
+      maxX: Math.max(...SPUR_TAIL.map(([px]) => px)) + pad,
+      minZ: Math.min(...SPUR_TAIL.map(([, pz]) => pz)) - pad,
+      maxZ: Math.max(...SPUR_TAIL.map(([, pz]) => pz)) + pad,
     }
   }
   if (x < spurBox.minX || x > spurBox.maxX || z < spurBox.minZ || z > spurBox.maxZ) return null
-  const nodeY = (k: number): number =>
-    k < SPUR_TAIL_ABS.length
-      ? SPUR_TAIL_ABS[k]
-      : streetDatum() + SPUR_TAIL_LIFT[k - SPUR_TAIL_ABS.length]
   let best = Infinity
   let bestY = 0
-  for (let i = 0; i < tail.length - 1; i++) {
-    const [ax, az] = tail[i]
-    const [bx, bz] = tail[i + 1]
+  for (let i = 0; i < SPUR_TAIL.length - 1; i++) {
+    const [ax, az] = SPUR_TAIL[i]
+    const [bx, bz] = SPUR_TAIL[i + 1]
     const abx = bx - ax
     const abz = bz - az
     const lengthSq = abx * abx + abz * abz
@@ -355,7 +379,7 @@ export function spurTrackDatum(x: number, z: number): { d: number; y: number } |
     const dSq = (x - px) * (x - px) + (z - pz) * (z - pz)
     if (dSq < best) {
       best = dSq
-      bestY = nodeY(i) + (nodeY(i + 1) - nodeY(i)) * t
+      bestY = spurNodeY(i) + (spurNodeY(i + 1) - spurNodeY(i)) * t
     }
   }
   return { d: Math.sqrt(best), y: bestY }
@@ -379,8 +403,8 @@ export function interiorHeight(x: number, z: number): number {
     if (track) return track.y + 0.018
   }
   const sd = pavedSignedDistance(x, z)
-  const grade = groundGrade(x, z)
-  const lift = throatLift(x, z)
+  const grade = groundGradeWithPavedDistance(x, z, sd)
+  const lift = throatLiftWithGrade(x, z, grade)
   const sheetDip = Math.min(corridorDip(x, z, grade), Math.min(0, lift))
   if (sd >= PAVE.edgeFade) return grade + sheetDip
   const coverage = sd <= 0 ? 1 : 1 - smooth(sd / PAVE.edgeFade)

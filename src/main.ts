@@ -13,6 +13,7 @@ import { gradeParams } from './render/grade'
 import { penumbraScale } from './dome/latticeField'
 import { ExteriorSystem } from './exterior/exteriorTerrain'
 import { StarshipSystem } from './starship/starshipSystem'
+import { prepareStarshipPayload } from './starship/starshipModel'
 import { FountainSystem } from './fountain/fountainSystem'
 import { FOG_EXTINCTION_PER_METER } from './exterior/marsAerialPerspective'
 import { PhysicsSystem } from './physics/physicsWorld'
@@ -20,6 +21,7 @@ import { InteractionSystem } from './player/interaction'
 import { PlayerSystem } from './player/playerSystem'
 import { enableMainDetailLayer } from './render/layers'
 import { OptimusExhibitSystem } from './robots/optimusExhibit'
+import { prepareOptimusPayload } from './robots/optimus/optimusModel'
 import { RobotsSystem } from './robots/robotsSystem'
 import { VegetationSystem } from './vegetation/vegetationSystem'
 import { RenderPipelineSystem } from './render/pipeline'
@@ -95,6 +97,19 @@ async function boot(): Promise<void> {
     )
     return
   }
+
+  // Start the two large CPU geometry builds as soon as the WebGPU gate has
+  // passed. Their payloads are pure transferable data and do not touch the
+  // renderer or scene, so they can overlap renderer initialization and the
+  // ordered system setup below. Each system still awaits and installs its
+  // completed asset at its original registry position.
+  const starshipPayloadPromise = prepareStarshipPayload()
+  const optimusPayloadPromise = prepareOptimusPayload()
+  // If renderer setup fails before registry.init() reaches either owner, keep
+  // these deliberately early promises observed so a worker failure cannot
+  // become an unhandled rejection during the fatal boot path.
+  void starshipPayloadPromise.catch(() => undefined)
+  void optimusPayloadPromise.catch(() => undefined)
 
   const canvas = document.createElement('canvas')
   canvas.id = 'scene'
@@ -181,7 +196,7 @@ async function boot(): Promise<void> {
   // Beyond the glass, with the terrain: the launch site is exterior scenery,
   // has no colliders and no interactions, and only has to exist before
   // `sealStaticShadowCasters` records the static bundle below.
-  registry.add(new StarshipSystem())
+  registry.add(new StarshipSystem(starshipPayloadPromise))
   registry.add(new DomeSystem(pipeline))
   const physics = registry.add(new PhysicsSystem())
   // Groundworks registers AFTER physics: its planter walls are real colliders,
@@ -197,7 +212,7 @@ async function boot(): Promise<void> {
     tram = registry.add(new TramSystem(physics, null, null))
     registry.add(new FreedomElevatorSystem(physics, null, null))
     const robots = registry.add(new RobotsSystem(null))
-    optimus = registry.add(new OptimusExhibitSystem())
+    optimus = registry.add(new OptimusExhibitSystem(optimusPayloadPromise))
     registry.add(new OpsScreensSystem(assembly, tram, robots))
     registry.add(new VegetationSystem(physics))
     registry.add(new FountainSystem(physics))
@@ -212,7 +227,7 @@ async function boot(): Promise<void> {
     // must be the elevator so its seated hint wins while a guest rides it.
     registry.add(new FreedomElevatorSystem(physics, player, interaction))
     const robots = registry.add(new RobotsSystem(player))
-    optimus = registry.add(new OptimusExhibitSystem())
+    optimus = registry.add(new OptimusExhibitSystem(optimusPayloadPromise))
     registry.add(new OpsScreensSystem(assembly, tram, robots))
     registry.add(new VegetationSystem(physics))
     // The fountain owns its own stone, water and spray; its four coping

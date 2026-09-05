@@ -1,6 +1,6 @@
 import { Group, MathUtils, Quaternion, Vector3 } from 'three'
 import type { Mesh, Object3D } from 'three'
-import { TOWER_ARM_N, TOWER_ARM_P, TOWER_QD_ARM, VEHICLE_PARTS } from './starshipBuild'
+import { TOWER_ARM_N, TOWER_ARM_P, TOWER_QD_ARM, VEHICLE_PARTS } from './starshipParts'
 import type { StarshipRig as RigMetrics } from './starshipBuild'
 import type { StarshipFlightState } from './starshipFlight'
 

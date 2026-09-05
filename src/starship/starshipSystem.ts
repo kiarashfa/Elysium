@@ -12,6 +12,7 @@ import { createStarshipPadBlast } from './starshipPadBlast'
 import { STARSHIP_SITE } from './starshipSite'
 import { STARSHIP_STATIC_SHADOW_GROUP } from './starshipShadow'
 import type { StarshipAsset } from './starshipModel'
+import type { StarshipPayload } from './starshipBuild'
 import type { StarshipPlume } from './starshipPlume'
 import type { StarshipPadBlast } from './starshipPadBlast'
 
@@ -86,6 +87,11 @@ const PAD_CLOUD_LINGER = 26
 
 export class StarshipSystem implements GameSystem {
   readonly id = 'starship'
+  private readonly payloadPromise?: Promise<StarshipPayload>
+
+  constructor(payloadPromise?: Promise<StarshipPayload>) {
+    this.payloadPromise = payloadPromise
+  }
 
   private asset: StarshipAsset | null = null
   private flight: StarshipFlight | null = null
@@ -107,7 +113,7 @@ export class StarshipSystem implements GameSystem {
   private removeStaticShadowReadyListener: (() => void) | null = null
 
   async init(ctx: GameContext): Promise<void> {
-    const asset = await loadStarshipAsset()
+    const asset = await loadStarshipAsset(this.payloadPromise)
     this.asset = asset
 
     for (const mesh of asset.meshes) {

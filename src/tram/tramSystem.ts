@@ -18,7 +18,7 @@ import { hullCollisionPoints } from './tramShape'
 import { BOGIE_Z } from './tramRunning'
 import { buildGuideway, buildTrackData, buildTube, carFloorY } from './track'
 import type { TrackData } from './track'
-import { buildTramCar, CAR_LENGTH, CAR_WIDTH } from './vehicle'
+import { buildTramCar, buildTramGeometryTemplate, CAR_LENGTH, CAR_WIDTH } from './vehicle'
 import type { TramCar } from './vehicle'
 import type RAPIER from '@dimforge/rapier3d-compat'
 
@@ -130,8 +130,9 @@ export class TramSystem implements GameSystem {
     this.staticGroup.add(gate.group)
     this.gate = gate
 
+    const tramGeometry = buildTramGeometryTemplate()
     for (let i = 0; i < 2; i++) {
-      const car = buildTramCar()
+      const car = buildTramCar({ template: tramGeometry })
       this.movingGroup.add(car.group)
       this.cars.push(car)
     }

@@ -714,6 +714,14 @@ interface SlotBuffer {
   uvs: number[]
 }
 
+/** Immutable geometry emitted for one material slot. Safe to mount in more
+ * than one car group because transforms and materials live on the Mesh. */
+export interface SlotGeometryTemplate {
+  slot: string
+  geometry: BufferGeometry
+  triangles: number
+}
+
 /** One merged geometry per material slot, faces routed individually. */
 export class SlotMesh {
   private readonly slots = new Map<string, SlotBuffer>()
@@ -773,23 +781,42 @@ export class SlotMesh {
     }
   }
 
-  build(materials: Record<string, Material>): Group {
-    const group = new Group()
+  buildGeometryTemplate(): SlotGeometryTemplate[] {
+    const templates: SlotGeometryTemplate[] = []
     for (const [name, slot] of this.slots) {
       if (slot.positions.length === 0) continue
-      const material = materials[name]
-      if (!material) throw new Error(`SlotMesh: no material bound for slot "${name}"`)
       const geometry = new BufferGeometry()
       geometry.setAttribute('position', new BufferAttribute(new Float32Array(slot.positions), 3))
       geometry.setAttribute('normal', new BufferAttribute(new Float32Array(slot.normals), 3))
       geometry.setAttribute('uv', new BufferAttribute(new Float32Array(slot.uvs), 2))
-      const mesh3 = new Mesh(geometry, material)
+      templates.push({
+        slot: name,
+        geometry,
+        triangles: slot.positions.length / 9,
+      })
+    }
+    return templates
+  }
+
+  static instantiate(
+    templates: readonly SlotGeometryTemplate[],
+    materials: Record<string, Material>,
+  ): Group {
+    const group = new Group()
+    for (const template of templates) {
+      const material = materials[template.slot]
+      if (!material) throw new Error(`SlotMesh: no material bound for slot "${template.slot}"`)
+      const mesh3 = new Mesh(template.geometry, material)
       mesh3.castShadow = true
       mesh3.receiveShadow = true
-      mesh3.name = `tram:${name}`
+      mesh3.name = `tram:${template.slot}`
       group.add(mesh3)
     }
     return group
+  }
+
+  build(materials: Record<string, Material>): Group {
+    return SlotMesh.instantiate(this.buildGeometryTemplate(), materials)
   }
 }
 

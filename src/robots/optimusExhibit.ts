@@ -5,6 +5,7 @@ import type { GameSystem } from '../runtime/system'
 import { optimusStances } from '../world/districts/optimusPlaza'
 import { loadOptimusSignFaces } from '../world/districts/optimusSign'
 import { loadOptimusAsset } from './optimus/optimusModel'
+import type { OptimusPayload } from './optimus/optimusBuild'
 import { LED_PERIOD, optimusLedClock } from './optimus/optimusMaterials'
 
 /**
@@ -36,6 +37,11 @@ const LOD_HYSTERESIS = 4
 
 export class OptimusExhibitSystem implements GameSystem {
   readonly id = 'optimus-exhibit'
+  private readonly payloadPromise?: Promise<OptimusPayload>
+
+  constructor(payloadPromise?: Promise<OptimusPayload>) {
+    this.payloadPromise = payloadPromise
+  }
 
   private readonly group = new Group()
   private readonly meshes: InstancedMesh[] = []
@@ -46,7 +52,10 @@ export class OptimusExhibitSystem implements GameSystem {
   async init(ctx: GameContext): Promise<void> {
     // The figure build and the marque's texture decode are independent; the
     // worker is the long pole either way.
-    const [asset, marque] = await Promise.all([loadOptimusAsset(), loadOptimusSignFaces()])
+    const [asset, marque] = await Promise.all([
+      loadOptimusAsset(this.payloadPromise),
+      loadOptimusSignFaces(),
+    ])
     this.group.add(marque)
     const stances = optimusStances()
     this.triangles = asset.lods.map((lod) => lod.triangles)

@@ -10,10 +10,11 @@ import {
   revolveY,
   roundedRect,
   setSlot,
+  SlotMesh,
   tubeAlong,
   unifyOrient,
 } from './tramMesh'
-import type { MeshData, SlotMesh, Vec2, Vec3 } from './tramMesh'
+import type { MeshData, SlotGeometryTemplate, Vec2, Vec3 } from './tramMesh'
 import {
   APERTURES,
   DOOR_HALF,
@@ -248,17 +249,34 @@ function doorLeaf(zCentre: number): MeshData {
 
 /** The doorsLeft contract: a Group with exactly two children, child 0 at
  *  negative z. `tramSystem` slides them ±0.78 m along local Z. */
-export function buildDoors(materials: TramMaterials, makeSlots: () => SlotMesh): Group {
-  const doors = new Group()
-  doors.name = 'tram-doors-left'
+export function buildDoorGeometryTemplates(
+  makeSlots: () => SlotMesh,
+): SlotGeometryTemplate[][] {
+  const templates: SlotGeometryTemplate[][] = []
   for (const sign of [-1, 1]) {
     const slots = makeSlots()
     slots.add(doorLeaf(sign * (LEAF_WIDTH / 2 + 0.005)), 'body')
-    const leaf = slots.build(materials)
-    leaf.name = `door-leaf-${sign < 0 ? 'a' : 'b'}`
+    templates.push(slots.buildGeometryTemplate())
+  }
+  return templates
+}
+
+export function instantiateDoors(
+  materials: TramMaterials,
+  templates: readonly SlotGeometryTemplate[][],
+): Group {
+  const doors = new Group()
+  doors.name = 'tram-doors-left'
+  for (let index = 0; index < templates.length; index++) {
+    const leaf = SlotMesh.instantiate(templates[index], materials)
+    leaf.name = `door-leaf-${index === 0 ? 'a' : 'b'}`
     doors.add(leaf)
   }
   return doors
+}
+
+export function buildDoors(materials: TramMaterials, makeSlots: () => SlotMesh): Group {
+  return instantiateDoors(materials, buildDoorGeometryTemplates(makeSlots))
 }
 
 /** Everything that frames the doorway and does not move with the leaves. */

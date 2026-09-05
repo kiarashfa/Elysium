@@ -2,18 +2,20 @@ import { Group, PointLight, Vector3 } from 'three'
 import { SlotMesh } from './tramMesh'
 import {
   buildDoorSurround,
-  buildDoors,
+  buildDoorGeometryTemplates,
   buildEnd,
   buildExteriorTrim,
   buildGlazing,
   buildHull,
   buildLivery,
   buildRoofPod,
+  instantiateDoors,
 } from './tramBody'
 import { buildInterior } from './tramInterior'
 import { buildRunningGear } from './tramRunning'
 import { tramMaterials } from './tramMaterials'
 import { CAR_LENGTH, CAR_WIDTH } from './tramShape'
+import type { SlotGeometryTemplate } from './tramMesh'
 
 /**
  * "THE LOOP" — Elysium Planitia Park's two-car automated people mover, and
@@ -54,6 +56,13 @@ export interface TramCar {
   triangles: number
 }
 
+export interface TramGeometryTemplate {
+  body: readonly SlotGeometryTemplate[]
+  doorLeaves: readonly SlotGeometryTemplate[][]
+  seats: ReadonlyArray<{ position: Vector3; yaw: number }>
+  triangles: number
+}
+
 export { CAR_LENGTH, CAR_WIDTH }
 
 /** Slots whose meshes must not be written into the sun's shadow map. */
@@ -69,9 +78,8 @@ const CABIN_LAMP_INTENSITY = 3
 
 let autoIndex = 0
 
-export function buildTramCar(options?: { index?: number }): TramCar {
-  const index = options?.index ?? autoIndex++
-  const materials = tramMaterials(index)
+/** Build the immutable body and door buffers once for all cars in a train. */
+export function buildTramGeometryTemplate(): TramGeometryTemplate {
   const slots = new SlotMesh()
 
   buildHull(slots)
@@ -85,9 +93,27 @@ export function buildTramCar(options?: { index?: number }): TramCar {
   buildRunningGear(slots)
   const cabinSeats = buildInterior(slots)
 
+  return {
+    body: slots.buildGeometryTemplate(),
+    doorLeaves: buildDoorGeometryTemplates(() => new SlotMesh()),
+    seats: orderSeats(cabinSeats),
+    // Preserve the existing budget contract: it reports the body mesh and
+    // excludes the separately authored animated door leaves.
+    triangles: slots.triangles,
+  }
+}
+
+export function buildTramCar(options?: {
+  index?: number
+  template?: TramGeometryTemplate
+}): TramCar {
+  const index = options?.index ?? autoIndex++
+  const materials = tramMaterials(index)
+  const template = options?.template ?? buildTramGeometryTemplate()
+
   const group = new Group()
   group.name = `tram-car-${index}`
-  const body = slots.build(materials)
+  const body = SlotMesh.instantiate(template.body, materials)
   // Glazing and lenses do not cast: a transparent pane written into a shadow
   // map darkens the cabin it is supposed to let light into.
   for (const child of body.children) {
@@ -109,7 +135,7 @@ export function buildTramCar(options?: { index?: number }): TramCar {
     group.add(lamp)
   }
 
-  const doorsLeft = buildDoors(materials, () => new SlotMesh())
+  const doorsLeft = instantiateDoors(materials, template.doorLeaves)
   group.add(doorsLeft)
   const doorsRight = new Group()
   doorsRight.name = 'tram-doors-right'
@@ -117,9 +143,12 @@ export function buildTramCar(options?: { index?: number }): TramCar {
 
   // Contract: seats[0] is the arrival seat — front bench, LEFT window side,
   // facing travel, with the whole windshield ahead of it.
-  const seats = orderSeats(cabinSeats)
+  const seats = template.seats.map((seat) => ({
+    position: seat.position.clone(),
+    yaw: seat.yaw,
+  }))
 
-  return { group, doorsLeft, doorsRight, seats, triangles: slots.triangles }
+  return { group, doorsLeft, doorsRight, seats, triangles: template.triangles }
 }
 
 /** Front-facing window seat first, then front aisle, then the rear pair. */
